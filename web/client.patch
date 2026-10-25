@@ -1,8 +1,8 @@
 diff --git a/index.html b/index.html
-index 3cc68eb..305f3c5 100644
+index 3cc68eb..6e52f12 100644
 --- a/index.html
 +++ b/index.html
-@@ -2,16 +2,25 @@
+@@ -2,14 +2,13 @@
  <html lang="en">
    <head>
      <meta charset="UTF-8" />
@@ -19,25 +19,13 @@ index 3cc68eb..305f3c5 100644
 +    <title>Forgotten Dungeon</title>
 +    <style>
 +      body { display: flex; flex-direction: column; position: fixed; top: var(--viewport-top, 0px); left: 0; height: var(--viewport-height, 100dvh); padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
-+      header { background: #151515; color: #ddd; padding: 10px 16px; font: 14px system-ui, sans-serif; display: flex; flex-wrap: wrap; gap: 8px 20px; }
-+      header a { color: #8ecfff; min-height: 44px; display: inline-flex; align-items: center; }
-+      header strong { align-self: center; }
-+      header span { color: #aaa; align-self: center; }
-+      @media (max-width: 600px) { header { padding: 4px 10px; gap: 0 14px; } header span { order: 1; flex-basis: 100%; font-size: 13px; padding-bottom: 6px; } }
 +      body #app { flex: 1; min-height: 0; height: auto; overflow: hidden; }
 +    </style>
    </head>
    <body>
-+    <header>
-+      <strong>Forgotten Dungeon</strong>
-+      <span>Choose 2 (Windows) at the codepage prompt.</span>
-+      <a href="/">Reconnect</a>
-+    </header>
      <div id="app"></div>
-     <script type="module" src="/src/main.ts"></script>
-   </body>
 diff --git a/src/App.vue b/src/App.vue
-index 55eeb1c..af0cf3e 100644
+index 55eeb1c..13639ff 100644
 --- a/src/App.vue
 +++ b/src/App.vue
 @@ -94,7 +94,7 @@ function onCommand(raw: string) {
@@ -49,11 +37,39 @@ index 55eeb1c..af0cf3e 100644
      commands = raw.split(separator).map((c) => c.trim());
    } else {
      commands = [raw];
+@@ -144,7 +144,6 @@ onBeforeUnmount(() => {
+   <div
+     v-if="isEmbed"
+     class="app-embed"
+-    @click="embedTerminalRef?.focusInput()"
+   >
+     <MudTerminal
+       ref="embedTerminalRef"
 diff --git a/src/components/MudTerminal.vue b/src/components/MudTerminal.vue
-index 4e7df84..37d5ba1 100644
+index 4e7df84..95c1067 100644
 --- a/src/components/MudTerminal.vue
 +++ b/src/components/MudTerminal.vue
-@@ -38,7 +38,7 @@ function writeln(text: string) {
+@@ -16,6 +16,19 @@ const emit = defineEmits<{
+ 
+ /* ── Refs ─────────────────────────────────────── */
+ const terminalRef = ref<HTMLElement | null>(null);
++const viewportRef = ref<HTMLElement | null>(null);
++// Original score headings reach 83 columns; keep every view on the same grid.
++const COLUMNS = 84;
++const READING_FONT_SIZE = 16;
++const VIEW_KEY = 'fd-terminal-view';
++type View = 'fit' | 'larger';
++const view = ref<View>('fit');
++try {
++  if (localStorage.getItem(VIEW_KEY) === 'larger') view.value = 'larger';
++} catch { /* Storage can be unavailable in private or restricted browsers. */ }
++let fittedWidth = -1;
++let fittedView: View | null = null;
++let resizeFrame = 0;
+ const inputRef = ref<HTMLInputElement | null>(null);
+ 
+ let terminal: Terminal | null = null;
+@@ -38,11 +51,43 @@ function writeln(text: string) {
  }
  
  function focusInput() {
@@ -62,7 +78,44 @@ index 4e7df84..37d5ba1 100644
  }
  
  function refit() {
-@@ -77,7 +77,7 @@ function submitCommand() {
+-  fitAddon?.fit();
++  const viewport = viewportRef.value;
++  const container = terminalRef.value;
++  if (!terminal || !fitAddon || !viewport || !container || !viewport.clientWidth) return;
++
++  if (fittedWidth !== viewport.clientWidth || fittedView !== view.value) {
++    container.style.width = `${viewport.clientWidth}px`;
++    terminal.options.fontSize = READING_FONT_SIZE;
++    let dimensions = fitAddon.proposeDimensions();
++    if (view.value === 'fit') {
++      // Fit the font, never the columns. Remeasure after each font change to
++      // account for the browser's device-pixel rounding of character cells.
++      for (let attempt = 0; attempt < 3 && dimensions && dimensions.cols < COLUMNS; attempt++) {
++        terminal.options.fontSize = Math.max(1,
++          Math.floor(terminal.options.fontSize! * dimensions.cols / COLUMNS * 10) / 10);
++        dimensions = fitAddon.proposeDimensions();
++      }
++      viewport.scrollLeft = 0;
++    } else {
++      const screen = terminal.element?.querySelector<HTMLElement>('.xterm-screen');
++      // Match the terminal's 8px padding and reserve space for its scrollbar.
++      container.style.width = `${Math.max(viewport.clientWidth, (screen?.offsetWidth ?? 0) + 32)}px`;
++    }
++    fittedWidth = viewport.clientWidth;
++    fittedView = view.value;
++  }
++  const dimensions = fitAddon.proposeDimensions();
++  if (dimensions) terminal.resize(COLUMNS, Math.max(2, dimensions.rows));
++}
++
++function setView(next: View) {
++  view.value = next;
++  try { localStorage.setItem(VIEW_KEY, next); } catch { /* Viewing still works without storage. */ }
++  refit();
+ }
+ 
+ defineExpose({ write, writeln, focusInput, refit });
+@@ -77,7 +122,7 @@ function submitCommand() {
    inputValue.value = '';
    historyIndex = -1;
  
@@ -71,7 +124,16 @@ index 4e7df84..37d5ba1 100644
      commandHistory.push(raw);
    }
  
-@@ -106,6 +106,7 @@ onMounted(async () => {
+@@ -99,13 +144,15 @@ onMounted(async () => {
+       brightBlack: '#555555',
+     },
+     fontFamily: '"Cascadia Code", "Fira Code", "Consolas", monospace',
+-    fontSize: 14,
++    cols: COLUMNS,
++    fontSize: READING_FONT_SIZE,
+     lineHeight: 1.1,
+     cursorBlink: false,
+     cursorStyle: 'bar',
      disableStdin: true,
      convertEol: false,
      scrollback: 10000,
@@ -79,7 +141,16 @@ index 4e7df84..37d5ba1 100644
      allowProposedApi: true,
    });
  
-@@ -140,6 +141,7 @@ onMounted(async () => {
+@@ -114,7 +161,7 @@ onMounted(async () => {
+   terminal.loadAddon(new WebLinksAddon());
+ 
+   terminal.open(terminalRef.value);
+-  fitAddon.fit();
++  refit();
+ 
+   // Whenever the user copies (Cmd/Ctrl+C, menu, etc.), if xterm has a
+   // selection, hand the terminal selection to the clipboard. We listen on
+@@ -140,6 +187,7 @@ onMounted(async () => {
  
    // Click on terminal focuses the input
    terminal.element?.addEventListener('mouseup', () => {
@@ -87,7 +158,58 @@ index 4e7df84..37d5ba1 100644
      // Only focus if no text is selected
      const sel = window.getSelection();
      if (!sel || sel.isCollapsed) {
-@@ -186,6 +188,8 @@ watch(
+@@ -147,11 +195,12 @@ onMounted(async () => {
+     }
+   });
+ 
+-  // Resize observer for responsive fit
++  // Observe the visible viewport, not the wider horizontally pannable grid.
+   resizeObserver = new ResizeObserver(() => {
+-    fitAddon?.fit();
++    cancelAnimationFrame(resizeFrame);
++    resizeFrame = requestAnimationFrame(refit);
+   });
+-  resizeObserver.observe(terminalRef.value);
++  resizeObserver.observe(viewportRef.value!);
+ 
+   focusInput();
+ });
+@@ -163,6 +212,7 @@ onBeforeUnmount(() => {
+     onClipboard = null;
+   }
+   resizeObserver?.disconnect();
++  cancelAnimationFrame(resizeFrame);
+   terminal?.dispose();
+ });
+ 
+@@ -177,8 +227,25 @@ watch(
+ 
+ <template>
+   <div :class="['mud-terminal', { 'mud-terminal--padded': padded }]">
++    <header class="terminal-header">
++      <strong aria-label="Forgotten Dungeon"><span class="wide-title">Forgotten Dungeon</span><span class="short-title" aria-hidden="true">FD</span></strong>
++      <div class="view-options" role="group" aria-label="Terminal view">
++        <button type="button" :aria-pressed="view === 'fit'" @click="setView('fit')">Fit</button>
++        <button type="button" :aria-pressed="view === 'larger'" @click="setView('larger')">Larger text</button>
++      </div>
++      <a href="/">Reconnect</a>
++      <details class="terminal-help">
++        <summary>Help</summary>
++        <div class="help-content">
++          <p>At the codepage prompt, choose 2 (Windows).</p>
++          <p>Fit shows the whole layout. Larger text lets you swipe sideways.</p>
++        </div>
++      </details>
++    </header>
+     <div class="terminal-wrapper">
+-      <div ref="terminalRef" class="terminal-container"></div>
++      <div ref="viewportRef" class="terminal-viewport" role="region" aria-label="Game output" tabindex="0">
++        <div ref="terminalRef" class="terminal-container"></div>
++      </div>
+       <div class="input-bar">
+         <span class="input-prompt">&gt;</span>
+         <input
+@@ -186,6 +253,8 @@ watch(
            v-model="inputValue"
            :type="passwordMode ? 'password' : 'text'"
            class="command-input"
@@ -96,7 +218,7 @@ index 4e7df84..37d5ba1 100644
            autocomplete="off"
            autocorrect="off"
            autocapitalize="off"
-@@ -193,6 +197,7 @@ watch(
+@@ -193,6 +262,7 @@ watch(
            placeholder="Enter command..."
            @keydown="onKeydown"
          />
@@ -104,7 +226,78 @@ index 4e7df84..37d5ba1 100644
        </div>
      </div>
    </div>
-@@ -251,17 +256,35 @@ watch(
+@@ -222,10 +292,68 @@ watch(
+   overflow: hidden;
+ }
+ 
+-.terminal-container {
++.terminal-viewport {
+   flex: 1;
++  min-width: 0;
+   min-height: 0;
+-  overflow: hidden;
++  overflow-x: auto;
++  overflow-y: hidden;
++}
++
++.terminal-viewport:focus-visible { outline: 2px solid #8ecfff; outline-offset: -2px; }
++
++.terminal-container {
++  height: 100%;
++}
++
++.terminal-header {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  padding: 0 8px;
++  flex-shrink: 0;
++  background: #151515;
++  color: #ddd;
++  font: 14px system-ui, sans-serif;
++}
++.terminal-header strong { margin-right: auto; white-space: nowrap; }
++.short-title { display: none; }
++.view-options { display: flex; gap: 2px; }
++.terminal-header button, .terminal-header a, .terminal-header summary {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  min-width: 44px;
++  min-height: 44px;
++  padding: 0 7px;
++  color: #8ecfff;
++  font: inherit;
++  white-space: nowrap;
++  cursor: pointer;
++}
++.terminal-header button { border: 1px solid transparent; background: transparent; }
++.terminal-header button[aria-pressed="true"] { background: #292929; border-color: #777; color: #fff; }
++.terminal-header button:focus-visible, .terminal-header a:focus-visible, .terminal-header summary:focus-visible { outline: 2px solid #8ecfff; outline-offset: -2px; }
++.terminal-help { position: relative; }
++.terminal-help summary { list-style: none; }
++.terminal-help summary::-webkit-details-marker { display: none; }
++.help-content {
++  position: absolute;
++  z-index: 2;
++  top: 100%;
++  right: 0;
++  width: min(300px, calc(100vw - 16px));
++  padding: 12px;
++  border: 1px solid #777;
++  background: #151515;
++  font-size: 16px;
++  line-height: 1.4;
++}
++.help-content p + p { margin-top: 8px; }
++@media (max-width: 600px) {
++  .terminal-header { gap: 4px; }
++  .wide-title { display: none; }
++  .short-title { display: inline; }
+ }
+ 
+ /* xterm.js padding via CSS — gives inner margin to terminal text */
+@@ -251,17 +379,35 @@ watch(
  
  .command-input {
    flex: 1;
