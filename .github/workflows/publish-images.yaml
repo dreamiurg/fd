@@ -1,14 +1,20 @@
-name: Publish FD images
+name: Build and deploy FD
 on:
   workflow_dispatch:
   push:
     branches: [codex/aws-hosting]
-    paths: [Dockerfile, NOTICE, 'mud/**', 'areas/**', 'web/**', '.github/workflows/publish-images.yaml']
 permissions:
   contents: read
-  packages: write
+
+concurrency:
+  group: fd-production
+  cancel-in-progress: false
 jobs:
   publish:
+    if: github.ref == 'refs/heads/codex/aws-hosting'
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -31,6 +37,8 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
           platforms: linux/amd64
           push: true
           tags: ghcr.io/dreamiurg/fd-${{ matrix.image }}:sha-${{ github.sha }}
@@ -41,4 +49,81 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
           DIGEST: ${{ steps.image.outputs.digest }}
-        run: echo "ghcr.io/dreamiurg/fd-$IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'FD_%s_IMAGE=ghcr.io/dreamiurg/fd-%s@%s\n' "${IMAGE^^}" "$IMAGE" "$DIGEST" > "$IMAGE.env"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: digest-${{ matrix.image }}
+          path: ${{ matrix.image }}.env
+          retention-days: 1
+
+  deploy:
+    needs: publish
+    if: github.ref == 'refs/heads/codex/aws-hosting'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: digest-*
+          path: /tmp/fd-digests
+          merge-multiple: true
+      - name: Publish immutable release manifest
+        id: release
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          python3 - <<'PYTHON'
+          import os, re
+          from pathlib import Path
+          lines = ["# Native amd64 images built from " + os.environ["SOURCE_SHA"]]
+          for name in ("game", "proxy", "web"):
+              line = Path("/tmp/fd-digests", name + ".env").read_text().strip()
+              assert re.fullmatch("FD_" + name.upper() + "_IMAGE=ghcr.io/dreamiurg/fd-" + name + r"@sha256:[0-9a-f]{64}", line)
+              lines.append(line)
+          Path("deploy/images.env").write_text("\n".join(lines) + "\n")
+          PYTHON
+          git fetch origin refs/heads/codex/aws-hosting
+          remote_head=$(git rev-parse FETCH_HEAD)
+          if [[ "$remote_head" != "$SOURCE_SHA" ]]; then
+            # Rerunning after a deployment failure can reuse this run's exact manifest child.
+            if [[ "$(git show -s --format=%P "$remote_head")" == "$SOURCE_SHA" ]] &&
+               [[ "$(git diff --name-only "$SOURCE_SHA" "$remote_head")" == deploy/images.env ]]; then
+              if ! cmp -s deploy/images.env <(git show "$remote_head:deploy/images.env"); then
+                echo 'Existing manifest differs from rebuilt digests; rerun failed jobs or dispatch from the current branch.' >&2
+                exit 1
+              fi
+              echo "sha=$remote_head" >> "$GITHUB_OUTPUT"
+              echo "Retrying immutable release $remote_head" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo 'Branch advanced during build; newer run owns deployment.'
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add deploy/images.env
+          git commit -m "chore: pin images for $SOURCE_SHA"
+          # Fast-forward only. A concurrent source push fails instead of publishing stale images.
+          git push origin HEAD:refs/heads/codex/aws-hosting
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Source: $SOURCE_SHA; immutable release: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c
+        if: steps.release.outputs.sha != ''
+        with:
+          role-to-assume: ${{ vars.FD_DEPLOY_ROLE_ARN }}
+          aws-region: us-west-2
+          role-session-name: fd-deploy-${{ github.run_id }}
+      - name: Back up and deploy the immutable release
+        if: steps.release.outputs.sha != ''
+        env:
+          FD_RELEASE_REF: ${{ steps.release.outputs.sha }}
+          FD_INSTANCE_ID: ${{ vars.FD_INSTANCE_ID }}
+        run: python3 deploy/ci-deploy.py

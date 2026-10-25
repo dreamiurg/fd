@@ -1,5 +1,24 @@
 # AWS deployment
 
+Routine releases are automatic on `codex/aws-hosting`: push reviewed source,
+then the workflow builds cached native amd64 images, commits their immutable
+digests to `deploy/images.env`, backs up the running world, and deploys that
+release child commit. The image revision labels identify the source commit;
+the manifest commit identifies the exact deployed source/configuration/digests.
+A stale source head refuses deployment. Bot manifest commits do not trigger
+another build. No Terraform pin PR is needed for application releases.
+
+The AWS role can invoke only the fixed deployment document on the FD instance.
+The nonsecret GitHub repository variables `FD_DEPLOY_ROLE_ARN` and
+`FD_INSTANCE_ID` are configured once from Terraform. Infrastructure and bootstrap
+remain in `terraform-aws-personal`; the app role cannot change them.
+
+Routine updates require the existing `/srv/fd` mount, area list and player
+directory. They never format or reseed the data volume. Player saves and persisted
+world files stay under `/srv/fd/game`; a failed backup aborts deployment. Current
+releases keep the save format unchanged. Future save-format changes need an
+explicit migration and recovery plan before shipping.
+
 The original local Compose stack remains separate. Production uses only public
 ports 80 and 443 and Caddy automatic HTTPS. The website and `/ws` are public;
 players authenticate with their in-game character passwords. WebSockets go
