@@ -16,6 +16,9 @@ for file in compose.yaml Caddyfile images.env fd.service fd-backup.service fd-ba
   mv "$release/deploy/$file.tmp" "$release/deploy/$file"
 done
 chmod 755 "$release"/deploy/*.sh
+# This public configuration is bind-mounted into the unprivileged Caddy process.
+# curl inherits umask 077; private gateway files keep their separate strict modes.
+chmod 644 "$release/deploy/Caddyfile"
 # Only known images, pinned by content digest; never source downloaded shell env.
 for name in GAME PROXY WEB; do
   grep -Eq "^FD_${name}_IMAGE=ghcr.io/dreamiurg/fd-[a-z]+@sha256:[0-9a-f]{64}$" "$release/deploy/images.env"
