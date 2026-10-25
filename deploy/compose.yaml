@@ -45,7 +45,7 @@ services:
     <<: *runtime
     image: ${FD_WEB_IMAGE:?pinned image required}
     mem_limit: 64m
-    tmpfs: [/tmp:size=16m,mode=1777]
+    tmpfs: ["/tmp:size=16m,mode=1777"]
     depends_on: [web-proxy]
     networks: [web]
 

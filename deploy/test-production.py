@@ -28,6 +28,7 @@ with tempfile.TemporaryDirectory(prefix='fd-production-test-') as temporary:
     assert sum(int(service['mem_limit']) for service in services.values()) <= 576 * 1024**2
     assert all(service['read_only'] and service['cap_drop'] == ['ALL'] for service in services.values())
     assert services['web-proxy']['environment']['ALLOWED_ORIGINS'] == 'https://fd.dreamiurg.net'
+    assert services['web']['tmpfs'] == ['/tmp:size=16m,mode=1777']
     assert config['networks']['game']['internal'] and config['networks']['web']['internal']
     assert services['caddy']['cap_add'] == ['NET_BIND_SERVICE']
     assert all(not s.get('cap_add') for key, s in services.items() if key != 'caddy')
