@@ -12,4 +12,4 @@ retained in the images and served by the browser client.
 
 This revival is operated noncommercially for a private group of friends.
 Original game passwords remain plaintext in player saves; use a unique game
-password. The HTTPS gateway password is separately generated and hashed.
+password. Character passwords are required by the game; the website is public.

@@ -1,68 +1,38 @@
 # Deployment acceptance
 
-The deployment is running at https://fd.dreamiurg.net. Remote HTTPS boundaries,
+The deployment is running at https://fd.dreamiurg.net. The original protected
+deployment passed remote HTTPS boundaries,
 Chromium and WebKit gameplay, mobile WebKit, restart, redeployment, VM reboot,
-backup, and isolated restore passed on 2026-10-24/25 (America/Los_Angeles).
+backup, and isolated restore on 2026-10-24/25 (America/Los_Angeles).
 Physical iPhone hardware remains untested. Local Telnet and both desktop engines
 also passed the earlier local milestone.
 
 The remote checks use fresh synthetic characters and isolated browser profiles.
 They never read historical player files or modify the local game volume. Use a
 unique, disposable game password: the historical server saves game passwords as
-plaintext. The shared HTTPS gate is a separate credential.
+plaintext. The website is public; character passwords remain required.
 
 ## Repeat the boundary checks
 
-Recover the gate through the restricted infrastructure `access-export` operation
-using a locally generated RSA public key. Only OAEP-encrypted ciphertext may be
-returned through SSM or Actions. Keep the private key and decrypted `access.env`
-in a mode-0700 ignored directory, with files mode 0600. Do not print the plaintext,
-put it in command arguments, or capture it in screenshots or browser traces.
-
 ```sh
-python3 tests/remote-boundary.py \
-  --credentials output/private/fd-access.env --expected-ip <deployed-elastic-ip>
+python3 tests/remote-boundary.py --expected-ip <deployed-elastic-ip>
 ```
 
 Supply the address from AWS metadata or an authoritative Route53 A response;
-record which source was used. The gate credential exported from the scoped SSM
-instance also binds the authenticated HTTPS endpoint to that provisioned service.
-The check verifies all recursive DNS addresses against that address, HTTP redirect,
-trusted TLS, rejected missing and incorrect gate credentials, protected `/health`
-and `/ws`, an authenticated WebSocket upgrade, and inaccessible public port 4000.
-Certificate timestamps in its output are converted to America/Los_Angeles.
+record which source was used. The check verifies all recursive DNS addresses
+against that address, the HTTP redirect, trusted TLS, public site and `/health`,
+a WebSocket upgrade without credentials, rejection of foreign browser origins,
+and inaccessible public port 4000. Certificate timestamps in its output are
+converted to America/Los_Angeles.
 
 ## Repeat browser acceptance
 
-Use Playwright CLI with isolated Chromium and WebKit contexts. Private mode-0600
-configs supply `browser.contextOptions.httpCredentials`. Chromium restricts
-`origin` to `https://fd.dreamiurg.net`. Keep credentials out of URLs, command
-arguments, screenshots, and traces. For mobile WebKit, use a 390 × 844 viewport,
-`isMobile: true`, and `hasTouch: true`.
+Use Playwright CLI with fresh isolated Chromium and WebKit contexts, without
+HTTP credentials or a proxy. Keep certificate verification enabled. For mobile
+WebKit, use a 390 × 844 viewport, `isMobile: true`, and `hasTouch: true`. Open
+https://fd.dreamiurg.net directly; no shared website password is required.
 
-The tested WebKit 26.6 automation engine rejects valid origin-scoped credentials
-on default HTTPS port 443. A synthetic HTTPS fixture reproduced this: the same
-server authenticated on a nondefault port, failed on default 443 with the origin
-filter, and authenticated on 443 without that filter. The server gate is unchanged.
-For automated WebKit only, start the fixed-destination TLS tunnel:
-
-```sh
-python3 tests/remote-connect-proxy.py --port 18890
-```
-
-Its only allowed destination is `fd.dreamiurg.net:443`; foreign hosts, wrong ports,
-and non-CONNECT requests are rejected. TLS remains encrypted end-to-end and the
-proxy does not decrypt traffic or read plaintext credentials or TLS keys. Set WebKit context options
-`proxy: {server: "http://127.0.0.1:18890"}`, `serviceWorkers: "block"`, and
-`httpCredentials` without `origin`. Keep certificate verification enabled.
-Open `about:blank`, then run `tests/remote-webkit-open.js` with `run-code --filename`
-before any other navigation. Its extra request/socket guards do not replace the
-proxy: Playwright routing alone does not constrain redirected requests. Native
-Basic Auth challenge handling and the allowed native WebSocket remain exercised.
-Stop this test-only proxy after closing the isolated WebKit sessions. Players
-open the website normally and do not need a proxy.
-
-After opening Chromium normally or WebKit with that helper, run
+After opening the website, run
 `tests/remote-browser.js` using Playwright CLI `run-code --filename`.
 The first phase creates a new character. Later phases
 are selected through `eval 'window.__fdPhase = "play"'` before running the file
@@ -107,7 +77,10 @@ backup into an empty temporary directory, starts an isolated game container
 without network access, checks the login greeting, and removes only that
 temporary container and directory. It must never restore over live game state.
 
-## Results
+## Original protected deployment results
+
+The results below describe the earlier release with its shared HTTP gate.
+They are historical evidence; current public-access checks are described above.
 
 Local mobile preflight passed on 2026-10-24 in isolated WebKit 26.6 at
 390 × 844: fresh creation using native touch taps on Send, masked password and
@@ -177,4 +150,5 @@ Final evidence:
 
 These are ignored local artifacts. The mobile result is browser emulation;
 physical iPhone Safari, its real keyboard, and native swipe scrolling remain
-unverified. The server gate was unchanged throughout the WebKit automation fix.
+unverified. The earlier WebKit Basic Auth automation workaround is no longer
+needed with public website access.

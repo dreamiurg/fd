@@ -1,10 +1,10 @@
-# Private AWS deployment
+# AWS deployment
 
 The original local Compose stack remains separate. Production uses only public
-ports 80 and 443, Caddy automatic HTTPS, and a shared Basic Auth gate on every
-path, including `/ws`. Authenticated WebSockets go directly from Caddy to the
-proxy, preserving separate client rate-limit identities and rejecting spoofed
-forwarding headers. The proxy accepts only the production origin and the
+ports 80 and 443 and Caddy automatic HTTPS. The website and `/ws` are public;
+players authenticate with their in-game character passwords. WebSockets go
+directly from Caddy to the proxy, preserving separate client rate-limit identities
+and rejecting spoofed forwarding headers. The proxy accepts only the production origin and the
 fixed `game:4000` destination. Game and proxy networks are internal. Caddy runs
 nonroot with only NET_BIND_SERVICE (required by its official binary); the game,
 proxy, and web containers drop every capability. Containers
@@ -25,22 +25,16 @@ bash /opt/fd/releases/<commit>/deploy/install.sh
 
 The installer fetches only deployment files at that commit, pulls and validates
 images before stopping the existing service, seeds only an empty game directory,
-and preserves existing saves and gateway credentials. It refuses incomplete,
-nonempty game data. Releases live under `/opt/fd/releases`; `/opt/fd/current`
+and preserves existing saves. It refuses incomplete, nonempty game data. Releases live under `/opt/fd/releases`; `/opt/fd/current`
 selects the active release. The systemd service is `fd.service`. Docker waits
 for the data mount on boot. The installer rolls back the release symlink if the
-new service fails its startup check.
+new service fails its startup check. Obsolete shared-gate credential files are
+removed only after successful startup; failed upgrades retain them for rollback.
 
 The server handles SIGTERM by saving complete connected and linkdead player
 characters from the game loop. Incomplete character creation is excluded.
 The game remains historical software: use unique game passwords because player
 files contain plaintext passwords. Do not grant administrator accounts to friends.
-
-Gateway credentials are generated on the host, never in Terraform or image
-builds. `/srv/fd/private/access.env` is root-only (0600, directory 0700), containing
-`FD_GATE_USER` and `FD_GATE_PASSWORD`. The Caddy fragment contains only the bcrypt
-hash. An authorized administrator can recover the credentials through the
-encrypted SSM handoff; never print them in deployment logs.
 
 Operations:
 
@@ -54,9 +48,8 @@ sudo /opt/fd/current/deploy/restore-smoke.sh
 The daily backup timer runs around 04:00 America/Los_Angeles. It briefly stops
 the game, saves players, archives `/srv/fd/game`, restarts the game, and uploads
 to the private S3 prefix with server-side encryption. Connections disconnect
-and players use Reconnect afterward. Gateway credentials and TLS state are not
-included in game archives. Updates take a backup first. A fresh replacement host
-generates a new gateway password unless its protected data volume is reused.
+and players use Reconnect afterward. TLS state is not included in game archives.
+Updates take a backup first.
 
 `restore.sh ARCHIVE EMPTY_TARGET_DIRECTORY` refuses nonempty targets and uses
 Python's safe tar extraction. `restore-smoke.sh` downloads the newest archive,
@@ -77,7 +70,7 @@ Local production boundary check (after building `fd-production-proxy:validation`
 python3 deploy/test-production.py
 ```
 
-The check uses separate temporary containers and a network, verifies 401 for
-unauthenticated site/WebSocket requests, verifies authenticated HTTP/upgrade,
-and confirms only the gateway publishes ports. Remote browser and persistence
-acceptance are documented separately in `docs/deployment-validation.md`.
+The check uses separate temporary containers and a network, verifies public
+HTTP/WebSocket access, strips stale browser Authorization headers upstream,
+preserves distinct client IPs, and confirms only the gateway publishes ports.
+Remote browser and persistence acceptance are documented separately in `docs/deployment-validation.md`.

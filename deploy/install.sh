@@ -21,7 +21,7 @@ for file in compose.yaml Caddyfile images.env fd.service fd-backup.service fd-ba
 done
 chmod 755 "$release"/deploy/*.sh
 # This public configuration is bind-mounted into the unprivileged Caddy process.
-# curl inherits umask 077; private gateway files keep their separate strict modes.
+# curl inherits umask 077; private diagnostics keep their separate strict modes.
 chmod 644 "$release/deploy/Caddyfile"
 # Only known images, pinned by content digest; never source downloaded shell env.
 for name in GAME PROXY WEB; do
@@ -33,7 +33,6 @@ phase pull-images
 "${compose[@]}" config --quiet
 "${compose[@]}" pull --quiet
 game_image=$(sed -n 's/^FD_GAME_IMAGE=//p' deploy/images.env)
-caddy_image=$("${compose[@]}" config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["caddy"]["image"])')
 phase prepare-game-data
 install -d -o 10001 -g 10001 -m 750 /srv/fd/game /srv/fd/caddy /srv/fd/caddy-config
 if [[ -z $(find /srv/fd/game -mindepth 1 -print -quit) ]]; then
@@ -41,23 +40,7 @@ if [[ -z $(find /srv/fd/game -mindepth 1 -print -quit) ]]; then
     --entrypoint sh -v /srv/fd/game:/seed "$game_image" -c 'cp -a /var/lib/fd/. /seed/'
 fi
 [[ -f /srv/fd/game/areas/area.lst ]] || { echo 'Existing game data is incomplete; refusing to overwrite it.' >&2; exit 1; }
-phase prepare-gateway
 install -d -m 700 /srv/fd/private
-if [[ ! -e /srv/fd/private/access.env ]]; then
-  password=$(openssl rand -hex 32)
-  printf 'FD_GATE_USER=friends\nFD_GATE_PASSWORD=%s\n' "$password" > /srv/fd/private/access.env
-  unset password
-fi
-chmod 600 /srv/fd/private/access.env
-if [[ ! -e /srv/fd/private/gate.caddy ]]; then
-  # Plaintext goes over stdin, never argv, Docker env, user-data, or logs.
-  sed -n 's/^FD_GATE_PASSWORD=//p' /srv/fd/private/access.env |
-    docker run --rm -i --network none --entrypoint caddy "$caddy_image" hash-password > /srv/fd/private/gate.hash
-  { printf 'basic_auth {\n    friends '; tr -d '\r\n' < /srv/fd/private/gate.hash; printf '\n}\n'; } > /srv/fd/private/gate.caddy
-  rm /srv/fd/private/gate.hash
-fi
-chown 10001:10001 /srv/fd/private/gate.caddy
-chmod 400 /srv/fd/private/gate.caddy
 phase validate-gateway
 # The official image has a CMD but no ENTRYPOINT. Compose must launch caddy,
 # rather than attempting to execute a binary named "validate".
@@ -90,5 +73,8 @@ if ! systemctl enable --now fd.service; then
   echo 'Deployment failed; previous release restored when available.' >&2
   exit 1
 fi
+# Retire the former website gate only after successful startup; a failed upgrade
+# can still roll back to the previous release with its existing credentials.
+rm -f /srv/fd/private/access.env /srv/fd/private/gate.caddy /srv/fd/private/gate.hash
 systemctl enable --now fd-backup.timer
 echo "Forgotten Dungeon release $FD_BOOTSTRAP_REF installed."

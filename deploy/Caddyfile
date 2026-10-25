@@ -5,7 +5,6 @@
 }
 
 fd.dreamiurg.net {
-    import /etc/caddy/gate.caddy
     header {
         Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options nosniff

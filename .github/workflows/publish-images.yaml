@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [codex/aws-hosting]
-    paths: [Dockerfile, 'mud/**', 'areas/**', 'web/**', '.github/workflows/publish-images.yaml']
+    paths: [Dockerfile, NOTICE, 'mud/**', 'areas/**', 'web/**', '.github/workflows/publish-images.yaml']
 permissions:
   contents: read
   packages: write
