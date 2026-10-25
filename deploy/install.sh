@@ -56,7 +56,8 @@ install -m 644 deploy/logrotate /etc/logrotate.d/fd
 install -d -m 755 /etc/systemd/system/docker.service.d
 printf '[Unit]\nRequiresMountsFor=/srv/fd\n' > /etc/systemd/system/docker.service.d/fd-data.conf
 previous=$(readlink /opt/fd/current || true)
-systemctl stop fd.service || true
+systemctl daemon-reload
+systemctl stop fd.service
 ln -sfn "$release" /opt/fd/current
 systemctl daemon-reload
 if ! systemctl enable --now fd.service; then

@@ -43,11 +43,11 @@ with tempfile.TemporaryDirectory(prefix='fd-production-test-') as temporary:
     caddyfile.write_text((ROOT / 'deploy/Caddyfile').read_text().replace('fd.dreamiurg.net {', 'http://:8080 {'))
     caddyfile.chmod(0o644)
     network = 'fd-gate-test-' + uuid.uuid4().hex[:10]
-    names = [network + '-backend', network + '-caddy']
+    names = [network + suffix for suffix in ('-backend', '-caddy', '-client1', '-client2')]
     run('docker', 'network', 'create', network)
     try:
-        server = "const h=require('node:http');const s=h.createServer((q,r)=>{if(q.headers.authorization){r.writeHead(500);r.end('credential leaked')}else r.end('ok')});s.on('upgrade',(q,s)=>s.end('HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\n\\r\\n'));s.listen(8080,'0.0.0.0');"
-        run('docker', 'run', '--platform', 'linux/amd64', '-d', '--name', names[0], '--network', network, '--network-alias', 'web', '--entrypoint', 'node', 'fd-production-proxy:validation', '-e', server)
+        server = "const h=require('node:http');for(const port of [8080,6200]){const s=h.createServer((q,r)=>{if(q.headers.authorization){r.writeHead(500);r.end('credential leaked')}else r.end('ok')});s.on('upgrade',(q,s)=>{if(q.headers.authorization)return s.end('HTTP/1.1 500 Credential Leak\\r\\n\\r\\n');s.end('HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nX-Test-Peer: '+q.headers['x-forwarded-for']+'\\r\\n\\r\\n')});s.listen(port,'0.0.0.0');}"
+        run('docker', 'run', '--platform', 'linux/amd64', '-d', '--name', names[0], '--network', network, '--network-alias', 'web', '--network-alias', 'web-proxy', '--entrypoint', 'node', 'fd-production-proxy:validation', '-e', server)
         run('docker', 'run', '--platform', 'linux/amd64', '-d', '--name', names[1], '--network', network, '--user', '10001:10001', '--read-only', '--tmpfs', '/data:uid=10001,gid=10001,mode=700', '--tmpfs', '/config:uid=10001,gid=10001,mode=700', '--cap-drop', 'ALL', '--cap-add', 'NET_BIND_SERVICE', '--security-opt', 'no-new-privileges', '-p', '127.0.0.1::8080', '-v', f'{caddyfile}:/etc/caddy/Caddyfile:ro', '-v', f'{gate}:/etc/caddy/gate.caddy:ro', image)
         status = json.loads(run('docker', 'inspect', names[1]))[0]
         if not status['State']['Running']:
@@ -78,6 +78,15 @@ with tempfile.TemporaryDirectory(prefix='fd-production-test-') as temporary:
         assert request('/', password) == 200
         assert request('/ws', password) == 101
         print('PASS: real Caddy rejects missing/wrong auth on site, health and WebSocket; accepts authorized HTTP/WebSocket; strips upstream credentials')
+        peers = []
+        for name in names[2:]:
+            run('docker', 'run', '--platform', 'linux/amd64', '-d', '--name', name, '--network', network, '--entrypoint', 'node', 'fd-production-proxy:validation', '-e', 'setInterval(()=>{},1000)')
+            client = "const h=require('node:http');const password=require('node:fs').readFileSync(0,'utf8').trim();const q=h.request({host:" + json.dumps(names[1]) + ",port:8080,path:'/ws',headers:{Authorization:'Basic '+Buffer.from('friends:'+password).toString('base64'),Connection:'Upgrade',Upgrade:'websocket','X-Forwarded-For':'203.0.113.88'} });q.on('upgrade',(r,s)=>{console.log(r.headers['x-test-peer']);s.destroy()});q.on('response',r=>{console.error(r.statusCode);process.exit(1)});q.on('error',()=>process.exit(1));q.end();"
+            peer = run('docker', 'exec', '-i', name, 'node', '-e', client, input=password + '\n')
+            assert peer and '203.0.113.88' not in peer, 'External forwarded IP spoof was accepted'
+            peers.append(peer)
+        assert peers[0] != peers[1], 'Distinct clients collapsed to one rate-limit identity'
+        print('PASS: authenticated WebSockets preserve distinct client IPs and reject spoofed forwarding headers')
     finally:
         for name in names:
             subprocess.run(['docker', 'rm', '-f', name], capture_output=True)

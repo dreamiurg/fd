@@ -2,8 +2,12 @@
 
 The original local Compose stack remains separate. Production uses only public
 ports 80 and 443, Caddy automatic HTTPS, and a shared Basic Auth gate on every
-path, including `/ws`. The proxy accepts only the production origin and the
-fixed `game:4000` destination. Game and proxy networks are internal. Containers
+path, including `/ws`. Authenticated WebSockets go directly from Caddy to the
+proxy, preserving separate client rate-limit identities and rejecting spoofed
+forwarding headers. The proxy accepts only the production origin and the
+fixed `game:4000` destination. Game and proxy networks are internal. Caddy runs
+nonroot with only NET_BIND_SERVICE (required by its official binary); the game,
+proxy, and web containers drop every capability. Containers
 cannot access instance metadata; only host backup commands use the instance role.
 
 Images are built for amd64 in GitHub Actions, outside the 1 GiB host. Official
@@ -56,8 +60,9 @@ generates a new gateway password unless its protected data volume is reused.
 
 `restore.sh ARCHIVE EMPTY_TARGET_DIRECTORY` refuses nonempty targets and uses
 Python's safe tar extraction. `restore-smoke.sh` downloads the newest archive,
-restores a temporary directory, and boots it without any network access to check
-the login menu. It never overwrites live state. Actual recovery is an explicit
+restores a temporary directory, verifies every regular file byte-for-byte
+against the archive (reporting only counts), and boots it without any network
+access to check the login menu. It never overwrites live state. Actual recovery is an explicit
 administrator operation: stop the service, preserve the existing game directory,
 restore into an empty replacement directory, then restart and verify login.
 

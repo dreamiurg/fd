@@ -51,7 +51,7 @@ index 55eeb1c..af0cf3e 100644
    } else {
      commands = [raw];
 diff --git a/src/components/MudTerminal.vue b/src/components/MudTerminal.vue
-index 4e7df84..63ec2e8 100644
+index 4e7df84..37d5ba1 100644
 --- a/src/components/MudTerminal.vue
 +++ b/src/components/MudTerminal.vue
 @@ -38,7 +38,7 @@ function writeln(text: string) {
@@ -101,7 +101,7 @@ index 4e7df84..63ec2e8 100644
            placeholder="Enter command..."
            @keydown="onKeydown"
          />
-+        <button class="send-command" type="button" @pointerdown.prevent="focusInput" @click="submitCommand">Send</button>
++        <button class="send-command" type="button" @click="submitCommand(); focusInput()">Send</button>
        </div>
      </div>
    </div>
