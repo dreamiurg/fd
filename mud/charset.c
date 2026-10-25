@@ -222,8 +222,7 @@ void TelnetCopy (char * dest, const char * source)
   }
   while (*source && *source != '\0')
   {
-    if (*source == 'ÿ') *dest++ = 'ß';
-    else                *dest++ = *source;
+    *dest++ = *source;
     source++;
   }
   *dest = '\0';
@@ -252,8 +251,6 @@ void TelnetCopy2 (char * dest, const char * source)
 
 char convert_in(int codepage, unsigned char source)
 {
-  if (codepage==2 && (unsigned char) source==255) return (unsigned char)'ß';
-
   if ((unsigned char)source > 127)
   {
     if (codepage==1) return (unsigned char)(koi8rDecodeArr[(unsigned char)source-128]);

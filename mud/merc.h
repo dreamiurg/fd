@@ -10,13 +10,13 @@
 #define FreeBSD
 #if defined(TRADITIONAL)
 #define const
-#define args( list )              ( )
+#define args( list )              list
 #define DECLARE_DO_FUN( fun )     void fun( )
 #define DECLARE_SPEC_FUN( fun )   bool fun( )
 #define DECLARE_SPELL_FUN( fun )  void fun( )
 #else
 #define const
-#define args( list )              ( )
+#define args( list )              list
 #define DECLARE_DO_FUN( fun )     DO_FUN    fun
 #define DECLARE_SPEC_FUN( fun )   SPEC_FUN  fun
 #define DECLARE_SPELL_FUN( fun )  SPELL_FUN fun
@@ -29,6 +29,7 @@ typedef unsigned __int64 uint64;
 
 #else
 #include <stdlib.h>
+#include <time.h>
 // typedef int64_t int64; // For OLD FreeBSD
 typedef  __int64_t  int64;
 typedef  __uint64_t  uint64; // unsigned int64
@@ -313,9 +314,7 @@ char *  crypt          args( ( const char *key, const char *salt ) );
 char *  crypt          args( ( const char *key, const char *salt ) );
 #endif
 
-#if     defined(linux)
-char *  crypt          args( ( const char *key, const char *salt ) );
-#endif
+
 
 #if     defined(WIN32)
 #define NOCRYPT
@@ -691,7 +690,7 @@ const char *  str_cut           args( (char *arg,int len));
 bool  check_clanspell(int sn, CLAN_DATA *clan);
 
 // interp.c
-void    interpret       args( ( unsigned CD *ch, const unsigned char *argument ) );
+void    interpret       args( ( CD *ch, const unsigned char *argument ) );
 bool    is_number       args( ( const unsigned char *arg ) );
 int     number_argument args( ( char *argument, char *arg ) );
 int     mult_argument   args( ( char *argument, char *arg) );

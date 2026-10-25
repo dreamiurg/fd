@@ -3,13 +3,13 @@
 # Don't forget to `make depend'.. 
 # or `make clean' if you have much time.
 
-WITH= -DWITH_UNICORN
+WITH=
 
 PROF	= -O -g
-C_FLAGS = $(PROF) -I../src/include -I/usr/include -I. $(WITH) -DOLD_RAND -Wall
+C_FLAGS = $(PROF) -I. $(WITH) -DOLD_RAND -Wall -fcommon
 
-# fbsd variant
-DSO_FLG =  -Wl,-E -L../lib -R../lib -lrdso
+# The optional FreeBSD Unicorn module loader is not needed by the game.
+DSO_FLG =
 
 L_FLAGS =  $(DSO_FLG) -lcrypt
 
@@ -36,5 +36,5 @@ install: rom
 clean:
 	rm -f rom *.o
   
-.c.o: tables.h merc.h
+%.o: %.c $(H_FILES)
 	gcc -c $(C_FLAGS) $<

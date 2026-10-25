@@ -16,6 +16,7 @@
 #include <sys/timeb.h> // for _ftime(), uses _timeb struct
 #else
 #include <sys/time.h>
+#include <unistd.h>
 #endif
 
 #include <ctype.h>
@@ -123,26 +124,6 @@ int     socket          args( ( int domain, int type, int protocol ) );
 #if     defined(interactive)
 #include <net/errno.h>
 #include <sys/fnctl.h>
-#endif
-
-#if     defined(linux)
-/*  Linux shouldn't need these. If you have a problem compiling, try
-    uncommenting these functions. */
-/*
-int     accept          args( ( int s, struct sockaddr *addr, int *addrlen ) );
-int     bind            args( ( int s, struct sockaddr *name, int namelen ) );
-int     getpeername     args( ( int s, struct sockaddr *name, int *namelen ) );
-int     getsockname     args( ( int s, struct sockaddr *name, int *namelen ) );
-int     listen          args( ( int s, int backlog ) );
-*/
-
-int     close           args( ( int fd ) );
-int     gettimeofday    args( ( struct timeval *tp, struct timezone *tzp ) );
-int     read            args( ( int fd, char *buf, int nbyte ) );
-int     select          args( ( int width, fd_set *readfds, fd_set *writefds,
-                            fd_set *exceptfds, struct timeval *timeout ) );
-int     socket          args( ( int domain, int type, int protocol ) );
-int     write           args( ( int fd, const char *buf, int nbyte ) );
 #endif
 
 #if     defined(MIPS_OS)
@@ -258,9 +239,6 @@ void TelnetCopy(char *dest, const char *source);
 bool MOBtrigger = TRUE;  /* act() switch                 */
 void write_to_buffer_old( DESCRIPTOR_DATA *d, const char *txt, int length );
 
-int     close           args( ( int fd ) );
-int     read            args( ( int fd, char *buf, int nbyte ) );
-int     write           args( ( int fd, const char *buf, int nbyte ) );
 
 /* OS-dependent local functions. */
 #if defined(unix) || defined(WIN32)
@@ -269,6 +247,7 @@ int     init_socket             args( ( u_short port ) );
 void    init_descriptor         args( ( int control ) );
 bool    read_from_descriptor    args( ( DESCRIPTOR_DATA *d ) );
 bool    write_to_descriptor     args( ( int desc, const char *txt, int length ) );
+static bool write_raw_descriptor(int desc, const char *txt, int length);
 #endif
 
 /* Other local functions (OS-independent). */
@@ -801,7 +780,6 @@ void init_descriptor( int control )
   char buf[MAX_STRING_LENGTH];
   DESCRIPTOR_DATA *dnew=NULL;
   struct sockaddr_in sock;
-  struct hostent *from;
   int desc;
   int size;
 
@@ -870,8 +848,8 @@ void init_descriptor( int control )
       free_descriptor(dnew);
       return;
     }
-    from=gethostbyaddr((char *) &sock.sin_addr,sizeof(sock.sin_addr),AF_INET);
-    dnew->host = str_dup( from ? from->h_name : buf );
+    /* Reverse DNS blocks the single game loop when the peer has no PTR record. */
+    dnew->host = str_dup(buf);
   }
         
   if ( check_ban(dnew->host,BAN_ALL))
@@ -998,24 +976,38 @@ bool read_from_descriptor( DESCRIPTOR_DATA *d )
   for ( ; ; )
   {
     int nRead;
+    unsigned char input[4096];
+    int available = UMIN(sizeof(input), sizeof(d->inbuf) - 10 - iStart);
 
 #if !defined( WIN32 )
-    nRead = read( d->descriptor, d->inbuf + iStart,
-      sizeof( d->inbuf ) - 10 - iStart );
+    nRead = read(d->descriptor, input, available);
 #else
-    nRead = recv( d->descriptor, d->inbuf + iStart,
-      sizeof( d->inbuf ) - 10 - iStart, 0 );
+    nRead = recv(d->descriptor, input, available, 0);
 #endif
 
     if ( nRead > 0 )
     {
       int cnt;
-         
-      for (cnt=iStart; cnt<=iStart+nRead; cnt++)
-        if (d->inbuf[cnt] == 27) d->inbuf[cnt]=' ';
-            
-      iStart += nRead;
-      if ( d->inbuf[iStart-1] == '\n' || d->inbuf[iStart-1] == '\r' )
+      /* Keep Telnet controls out of commands, including split TCP packets. */
+      for (cnt = 0; cnt < nRead; cnt++)
+      {
+        unsigned char c = input[cnt];
+        switch (d->telnet_state)
+        {
+        case 1: /* IAC */
+          if (c == IAC) { d->telnet_state = 0; break; }
+          d->telnet_state = (c == SB) ? 3 :
+            ((c == WILL || c == WONT || c == DO || c == DONT) ? 2 : 0);
+          continue;
+        case 2: d->telnet_state = 0; continue; /* option byte */
+        case 3: if (c == IAC) d->telnet_state = 4; continue; /* subnegotiation */
+        case 4: d->telnet_state = (c == SE) ? 0 : 3; continue;
+        default:
+          if (c == IAC) { d->telnet_state = 1; continue; }
+        }
+        if (c != 0) d->inbuf[iStart++] = (c == 27) ? ' ' : c;
+      }
+      if (iStart > 0 && (d->inbuf[iStart-1] == '\n' || d->inbuf[iStart-1] == '\r'))
         break;
     }
     else if ( nRead == 0 )
@@ -1608,7 +1600,25 @@ void write_to_buffer( DESCRIPTOR_DATA *d, const char *txt, int length )
  * Write a block of text to the file descriptor.
  * If this gives errors on very long blocks (like 'ofind all'),
  *   try lowering the max block size. */
-bool write_to_descriptor( int desc, const char *txt, int length )
+bool write_to_descriptor(int desc, const char *txt, int length)
+{
+  char escaped[8192];
+  int i, used = 0;
+  if (length <= 0) length = strlen(txt);
+  for (i = 0; i < length; i++)
+  {
+    if (used + 2 > sizeof(escaped))
+    {
+      if (!write_raw_descriptor(desc, escaped, used)) return FALSE;
+      used = 0;
+    }
+    escaped[used++] = txt[i];
+    if ((unsigned char)txt[i] == IAC) escaped[used++] = txt[i];
+  }
+  return used == 0 || write_raw_descriptor(desc, escaped, used);
+}
+
+static bool write_raw_descriptor(int desc, const char *txt, int length)
 {
   int iStart;
   int nWrite;
@@ -1768,6 +1778,8 @@ void nanny (DESCRIPTOR_DATA * d, const char * argument)
         return ;
       }
 
+      // Negotiate echo directly; control bytes must not pass through text encoding.
+      write_raw_descriptor(d->descriptor, echo_off_str, 3);
       // prompt for password
       write_to_buffer (d, "Пароль: ", 0)  ;
       ch->timer=28;
@@ -1808,6 +1820,7 @@ void nanny (DESCRIPTOR_DATA * d, const char * argument)
   // get player's password
   case CON_GET_OLD_PASSWORD:
 
+    write_raw_descriptor(d->descriptor, echo_on_str, 3);
     write_to_buffer (d, "\n\r", 2) ;
 
     if (get_trust (ch) > 101 && check_ban (d->host, BAN_IMM))
@@ -1935,6 +1948,7 @@ void nanny (DESCRIPTOR_DATA * d, const char * argument)
       do_printf (buf, "Новый персонаж.\n\rВведи пароль для %s: ", ch->name) ;
       write_to_buffer (d, buf, 0) ;
 
+      write_raw_descriptor(d->descriptor, echo_off_str, 3);
       // ask for the password
       d->connected = CON_GET_NEW_PASSWORD ;
       break ;
@@ -1999,6 +2013,7 @@ void nanny (DESCRIPTOR_DATA * d, const char * argument)
       return ;
     }
 
+    write_raw_descriptor(d->descriptor, echo_on_str, 3);
     // start new player creation process from race selection
     write_to_buffer (d, "\n\r", 0) ;
     write_to_buffer (d, "Много рас в мире Забытого Подземелья...\n\r  ", 0) ;

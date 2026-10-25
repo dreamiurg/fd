@@ -69,13 +69,14 @@ struct keywords_type
 };
 
 // mobprograms
-extern struct mob_cmd_type **mob_cmd_table[];
 struct mob_cmd_type
 {
   char   *name;
   DO_FUN *do_fun;
   char   *help;
 };
+
+extern struct mob_cmd_type mob_cmd_table[];
 
 struct flag_type
 {
@@ -135,6 +136,7 @@ struct  descriptor_data
   char              inlast   [MAX_STRING_LENGTH];
   int               repeat;
   int               codepage;
+  int               telnet_state; /* Streaming IAC decoder, zeroed by new_descriptor. */
   char *            outbuf;
   int               outsize;
   int               outtop;

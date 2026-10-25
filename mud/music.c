@@ -170,7 +170,17 @@ void load_songs(void)
       }
 
       song_table[count].lyrics[lines] = fread_string_eol(fp);
-      lines++;
+      /* The historical final song ends with an inline terminator. */
+      {
+        char *end = strchr(song_table[count].lyrics[lines], '~');
+        lines++;
+        if (end)
+        {
+          *end = '\0';
+          song_table[count].lines = lines;
+          break;
+        }
+      }
     }
   }
 }

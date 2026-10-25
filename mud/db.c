@@ -2700,7 +2700,7 @@ const char *fread_string_eol( FILE *fp )
 {
   static bool char_special[256-EOF];
   char *plast;
-  char c;
+  int c;
  
   if ( char_special[EOF-EOF] != TRUE )
   {
@@ -2724,13 +2724,20 @@ const char *fread_string_eol( FILE *fp )
   }
   while ( isspace(c) );
  
+  if (c == EOF)
+  {
+    bug("Fread_string_eol EOF", 0);
+    exit(1);
+  }
   if ( ( *plast++ = c ) == '\n') return &str_empty[0];
  
   for ( ;; )
   {
-    if ( !char_special[ ( *plast++ = getc( fp ) ) - EOF ] ) continue;
+    c = getc(fp);
+    *plast++ = c;
+    if (!char_special[c - EOF]) continue;
  
-    switch ( plast[-1] )
+    switch (c)
     {
       default:
         break;
@@ -2889,7 +2896,7 @@ void *alloc_mem( int sMem )
 #ifdef MAGIC_CHECKING
     MAGIC(pMem)->cookie = MAGIC_COOKIE;
     MAGIC(pMem)->size = sMem - sizeof(struct magic);
-    MAGIC(pMem)++;
+    pMem = (char *)pMem + sizeof(struct magic);
 #endif
 
     allocated+=sMem;
@@ -2905,7 +2912,7 @@ void free_mem( void *pMem, int sMem )
   int iList;
 
 #ifdef MAGIC_CHECKING
-  MAGIC (pMem)--;
+  pMem = (char *)pMem - sizeof(struct magic);
   
   if (MAGIC (pMem)->cookie != MAGIC_COOKIE)
     {
