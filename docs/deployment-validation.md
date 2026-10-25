@@ -21,9 +21,11 @@ python3 tests/remote-boundary.py --expected-ip <deployed-elastic-ip>
 Supply the address from AWS metadata or an authoritative Route53 A response;
 record which source was used. The check verifies all recursive DNS addresses
 against that address, the HTTP redirect, trusted TLS, public site and `/health`,
-a WebSocket upgrade without credentials, rejection of foreign browser origins,
-and inaccessible public port 4000. Certificate timestamps in its output are
-converted to America/Los_Angeles.
+a WebSocket upgrade without credentials, rejection of foreign browser origins
+before application data, and inaccessible public port 4000. The pinned proxy
+checks Origin after HTTP upgrade and immediately closes rejected connections;
+an HTTP 101 alone does not establish game access. Certificate timestamps in its
+output are converted to America/Los_Angeles.
 
 ## Repeat browser acceptance
 
@@ -76,6 +78,39 @@ Run `backup`, then `restore-smoke`. The restore operation downloads the newest
 backup into an empty temporary directory, starts an isolated game container
 without network access, checks the login greeting, and removes only that
 temporary container and directory. It must never restore over live game state.
+
+## Public website acceptance
+
+Release `3578a67690f84ba2425423ac1d8dd152d83e9d09` passed on 2026-10-25
+at 09:17–09:22 PDT (timestamps converted to America/Los_Angeles). Redeploy
+`40210780484` took a backup before updating; status `40210887761` confirmed the
+same data mount, enabled game service, active backup timer, four running
+containers, and healthy game.
+
+- Anonymous HTTPS returned 200 for the site and health endpoint, with trusted
+  TLS and DNS matching AWS-confirmed EIP `184.33.125.10`. The native WebSocket
+  connected without credentials. A foreign Origin received an immediate close
+  before application data; public game port 4000 remained unreachable.
+- Fresh Chromium 155 and desktop WebKit 26.6 profiles used no HTTP credentials,
+  Authorization headers, or proxy. Both created characters, masked game
+  passwords, excluded passwords from 24 history entries, rendered seven ANSI
+  colors, moved north/south, and displayed Cyrillic including `я`.
+- Both desktop engines and mobile WebKit saved, quit, then used Reconnect to
+  log in with their character passwords and recover their saved titles. Mobile
+  creation and commands used touch Send; the 390 × 844 layout had no horizontal
+  overflow and kept input reachable at a reduced 430-pixel height.
+- Pre-update synthetic character `Remoteydrspm` was recognized and required a
+  masked password. Authenticated login for that older test character was not
+  repeated because its deliberately temporary password was no longer retained;
+  no password was recovered or reset.
+
+Screenshots are ignored local artifacts:
+`output/playwright/public-chromium-final.png`,
+`output/playwright/public-webkit-final.png`, and
+`output/playwright/public-mobile-final.png`. All isolated test browsers were
+closed after safe logout. Physical iPhone hardware remains untested; mobile
+results are WebKit emulation. The earlier reboot/restore suite was not repeated
+for this website authentication change.
 
 ## Original protected deployment results
 
