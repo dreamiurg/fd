@@ -1,0 +1,133 @@
+diff --git a/index.html b/index.html
+index 3cc68eb..7973d29 100644
+--- a/index.html
++++ b/index.html
+@@ -3,15 +3,22 @@
+   <head>
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <link rel="preconnect" href="https://fonts.googleapis.com" />
+-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+-    <link
+-      href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600&display=swap"
+-      rel="stylesheet"
+-    />
+-    <title>mud-web-client</title>
++    <title>Forgotten Dungeon</title>
++    <style>
++      body { display: flex; flex-direction: column; }
++      header { background: #151515; color: #ddd; padding: 10px 16px; font: 14px system-ui, sans-serif; display: flex; flex-wrap: wrap; gap: 8px 20px; }
++      header a { color: #8ecfff; }
++      header span { color: #aaa; }
++      body #app { flex: 1; min-height: 0; height: auto; }
++    </style>
+   </head>
+   <body>
++    <header>
++      <strong>Forgotten Dungeon</strong>
++      <span>Choose 2 (Windows) at the codepage prompt.</span>
++      <a href="/">Reconnect</a>
++      <a href="/LICENSE-client.txt" target="_blank" rel="noopener">Client license</a>
++    </header>
+     <div id="app"></div>
+     <script type="module" src="/src/main.ts"></script>
+   </body>
+diff --git a/src/App.vue b/src/App.vue
+index 55eeb1c..af0cf3e 100644
+--- a/src/App.vue
++++ b/src/App.vue
+@@ -94,7 +94,7 @@ function onCommand(raw: string) {
+   const separator = config.separator;
+   let commands: string[];
+ 
+-  if (separator && raw.includes(separator)) {
++  if (separator && raw.includes(separator) && !parser.passwordMode.value) {
+     commands = raw.split(separator).map((c) => c.trim());
+   } else {
+     commands = [raw];
+diff --git a/src/components/MudTerminal.vue b/src/components/MudTerminal.vue
+index 4e7df84..d656f84 100644
+--- a/src/components/MudTerminal.vue
++++ b/src/components/MudTerminal.vue
+@@ -77,7 +77,7 @@ function submitCommand() {
+   inputValue.value = '';
+   historyIndex = -1;
+ 
+-  if (raw.length > 0) {
++  if (raw.length > 0 && !props.passwordMode) {
+     commandHistory.push(raw);
+   }
+ 
+@@ -106,6 +106,7 @@ onMounted(async () => {
+     disableStdin: true,
+     convertEol: false,
+     scrollback: 10000,
++    screenReaderMode: true,
+     allowProposedApi: true,
+   });
+ 
+@@ -186,6 +187,7 @@ watch(
+           v-model="inputValue"
+           :type="passwordMode ? 'password' : 'text'"
+           class="command-input"
++          aria-label="Game command"
+           autocomplete="off"
+           autocorrect="off"
+           autocapitalize="off"
+diff --git a/src/composables/useConfig.ts b/src/composables/useConfig.ts
+index d1713e7..adc6563 100644
+--- a/src/composables/useConfig.ts
++++ b/src/composables/useConfig.ts
+@@ -1,31 +1,22 @@
+ import { reactive, readonly } from 'vue';
+-import type { ClientConfig, LayoutMode } from '@/types';
++import type { ClientConfig } from '@/types';
+ 
+ function param(name: string): string | null {
+   const url = new URL(window.location.href);
+   return url.searchParams.get(name);
+ }
+ 
+-function resolveMode(): LayoutMode {
+-  const p = param('mode');
+-  if (p === 'full' || p === 'embed') return p;
+-  // Legacy: ?embed=1 forces embed mode
+-  if (param('embed') === '1') return 'embed';
+-  // Default: embed (for iframe compatibility)
+-  return 'embed';
+-}
+-
+ function createConfig(): ClientConfig {
+   return reactive<ClientConfig>({
+-    proxy: param('proxy') || 'wss://play.maldorne.org:6200/',
++    proxy: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`,
+     host: param('host') || 'muds.maldorne.org',
+     port: parseInt(param('port') || '5010', 10),
+-    mud: param('mud') || null,
++    mud: 'fd',
+     name: param('name') || 'Guest',
+-    ttype: param('ttype') || 'maldorne.org',
+-    debug: param('debug') === '1',
++    ttype: 'Forgotten Dungeon',
++    debug: false,
+     separator: param('separator') ?? ';',
+-    mode: resolveMode(),
++    mode: 'embed',
+   });
+ }
+ 
+diff --git a/src/composables/useSocket.ts b/src/composables/useSocket.ts
+index ceb2d85..b030949 100644
+--- a/src/composables/useSocket.ts
++++ b/src/composables/useSocket.ts
+@@ -34,6 +34,10 @@ export function useSocket(config: ClientConfig): UseSocketReturn {
+     } catch {
+       return; // not valid JSON — drop
+     }
++    if (typeof msg.passwordMode === 'boolean') {
++      const echo = new Uint8Array([255, msg.passwordMode ? 251 : 252, 1]);
++      for (const fn of dataHandlers) fn(echo);
++    }
+     if (typeof msg.gmcp === 'string') {
+       for (const fn of gmcpHandlers) fn(msg.gmcp);
+     }

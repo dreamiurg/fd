@@ -1,0 +1,15 @@
+.git
+player
+log
+gods
+SRC
+mud/*.o
+mud/rom
+areas/who.htm
+areas/acom
+areas/foot-wrapping
+areas/oncrash
+areas/romctl
+areas/romreboot
+areas/romtell
+web/node_modules

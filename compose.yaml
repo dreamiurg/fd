@@ -1,0 +1,64 @@
+name: forgotten-dungeon
+
+services:
+  game:
+    build: .
+    platform: linux/amd64
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      # Player saves rename areas/romtmp into player/, requiring one filesystem.
+      - game-data:/var/lib/fd
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  web-proxy:
+    build:
+      context: .
+      dockerfile: web/proxy.Dockerfile
+    environment:
+      MUD_ROUTES: '{"fd":{"host":"game","port":4000,"encoding":"windows-1251"}}'
+      ENABLE_LEGACY_ROUTING: "false"
+      DEFAULT_ENCODING: windows-1251
+      CHAT_ENABLED: "false"
+      COMPRESS: "false"
+      DEBUG: "false"
+      LOG_LEVEL: warn
+      MAX_CONNECTIONS: "32"
+      RATE_LIMIT_PER_IP: "30"
+      ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+    depends_on:
+      game:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - web-proxy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  game-data:
