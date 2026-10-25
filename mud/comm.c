@@ -223,6 +223,9 @@ DESCRIPTOR_DATA * d;               // My DESC
 FILE *            fpReserve;       // Reserved file handle
 FILE *            logReserve;      // Reserved for log file handle
 bool              god;             // All new chars are gods!
+static volatile sig_atomic_t stop_requested = 0;
+static void request_stop(int sig) { (void)sig; stop_requested = 1; }
+
 bool              merc_down;       // Shutdown
 char              str_boot_time[MAX_INPUT_LENGTH];
 time_t            current_time;    // time of this pulse
@@ -493,6 +496,7 @@ void game_loop_unix( int control )
 
 #if !defined( WIN32 )
   signal( SIGPIPE, SIG_IGN );
+  signal( SIGTERM, request_stop );
 #endif
   gettimeofday( &last_time, NULL );
   current_time = (time_t) last_time.tv_sec;
@@ -535,7 +539,7 @@ void game_loop_unix( int control )
 #endif
   
   /* Main loop */
-  while ( !merc_down )
+  while ( !merc_down && !stop_requested )
   {
     fd_set in_set;
     fd_set out_set;
@@ -563,6 +567,7 @@ void game_loop_unix( int control )
 
      if ( select( maxdesc+1, &in_set, &out_set, &exc_set, &null_time ) < 0 )
      {
+       if (errno == EINTR) continue;
        perror( "Game_loop: select: poll" );
        exit( 1 );
      }
@@ -695,6 +700,7 @@ void game_loop_unix( int control )
         stall_time.tv_sec  = secDelta;
         
         if ( (rc=select(FD_SETSIZE, &fds, NULL, NULL, &stall_time )) < 0 ) {
+                if (errno == EINTR) continue;
                 perror( "Game_loop: select: stall" );
                 exit( 1 );
         } else if(rc)
@@ -731,6 +737,7 @@ void game_loop_unix( int control )
         stall_time.tv_sec  = secDelta;
         if ( select( 0, NULL, NULL, NULL, &stall_time ) < 0 )
         {
+          if (errno == EINTR) continue;
           perror( "Game_loop: select: stall" );
           exit( 1 );
         }
@@ -770,7 +777,18 @@ void game_loop_unix( int control )
 #ifdef WITH_ANTICRASH
     ignore_ignorecrash = 0;
 #endif
-  }  
+  }
+  if (stop_requested)
+  {
+    CHAR_DATA *ch;
+    for (ch = char_list; ch; ch = ch->next)
+    {
+      if (IS_NPC(ch) || ch->level < 1) continue;
+      if (ch->desc && ch->desc->connected != CON_PLAYING) continue;
+      save_one_char(ch, SAVE_NORMAL);
+    }
+    log_string("SIGTERM: player state saved.");
+  }
 }
 #endif
 

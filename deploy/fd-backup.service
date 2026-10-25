@@ -1,0 +1,10 @@
+[Unit]
+Description=Back up Forgotten Dungeon state to S3
+After=fd.service
+RequiresMountsFor=/srv/fd
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/fd-backup.env
+ExecStart=/opt/fd/current/deploy/backup.sh
+TimeoutStartSec=600

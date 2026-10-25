@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Forgotten Dungeon backup
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 America/Los_Angeles
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

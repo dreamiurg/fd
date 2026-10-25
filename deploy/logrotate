@@ -1,0 +1,10 @@
+/srv/fd/game/log/log.fil /srv/fd/game/log/olc.log {
+    daily
+    maxsize 5M
+    rotate 7
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su 10001 10001
+}

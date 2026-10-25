@@ -1,0 +1,19 @@
+[Unit]
+Description=Forgotten Dungeon
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+RequiresMountsFor=/srv/fd
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/fd/current
+ExecStartPre=/opt/fd/current/deploy/network-guard.sh
+ExecStart=/usr/bin/docker compose --env-file deploy/images.env -f deploy/compose.yaml up -d --wait --wait-timeout 120
+ExecStop=/usr/bin/docker compose --env-file deploy/images.env -f deploy/compose.yaml stop
+TimeoutStartSec=180
+TimeoutStopSec=90
+
+[Install]
+WantedBy=multi-user.target

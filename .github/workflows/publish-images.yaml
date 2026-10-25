@@ -1,0 +1,44 @@
+name: Publish FD images
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/aws-hosting]
+    paths: [Dockerfile, 'mud/**', 'areas/**', 'web/**', '.github/workflows/publish-images.yaml']
+permissions:
+  contents: read
+  packages: write
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {image: game, dockerfile: Dockerfile}
+          - {image: proxy, dockerfile: web/proxy.Dockerfile}
+          - {image: web, dockerfile: web/Dockerfile}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with: {persist-credentials: false}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        id: image
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/dreamiurg/fd-${{ matrix.image }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/dreamiurg/fd
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Record immutable image
+        env:
+          IMAGE: ${{ matrix.image }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: echo "ghcr.io/dreamiurg/fd-$IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"

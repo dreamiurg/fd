@@ -1,11 +1,12 @@
 diff --git a/index.html b/index.html
-index 3cc68eb..7973d29 100644
+index 3cc68eb..305f3c5 100644
 --- a/index.html
 +++ b/index.html
-@@ -3,15 +3,22 @@
+@@ -2,16 +2,26 @@
+ <html lang="en">
    <head>
      <meta charset="UTF-8" />
-     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 -    <link rel="preconnect" href="https://fonts.googleapis.com" />
 -    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 -    <link
@@ -13,13 +14,17 @@ index 3cc68eb..7973d29 100644
 -      rel="stylesheet"
 -    />
 -    <title>mud-web-client</title>
++    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
++    <link rel="icon" href="data:," />
 +    <title>Forgotten Dungeon</title>
 +    <style>
-+      body { display: flex; flex-direction: column; }
++      body { display: flex; flex-direction: column; position: fixed; top: var(--viewport-top, 0px); left: 0; height: var(--viewport-height, 100dvh); padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 +      header { background: #151515; color: #ddd; padding: 10px 16px; font: 14px system-ui, sans-serif; display: flex; flex-wrap: wrap; gap: 8px 20px; }
-+      header a { color: #8ecfff; }
-+      header span { color: #aaa; }
-+      body #app { flex: 1; min-height: 0; height: auto; }
++      header a { color: #8ecfff; min-height: 44px; display: inline-flex; align-items: center; }
++      header strong { align-self: center; }
++      header span { color: #aaa; align-self: center; }
++      @media (max-width: 600px) { header { padding: 4px 10px; gap: 0 14px; } header span { order: 1; flex-basis: 100%; font-size: 13px; padding-bottom: 6px; } }
++      body #app { flex: 1; min-height: 0; height: auto; overflow: hidden; }
 +    </style>
    </head>
    <body>
@@ -27,7 +32,7 @@ index 3cc68eb..7973d29 100644
 +      <strong>Forgotten Dungeon</strong>
 +      <span>Choose 2 (Windows) at the codepage prompt.</span>
 +      <a href="/">Reconnect</a>
-+      <a href="/LICENSE-client.txt" target="_blank" rel="noopener">Client license</a>
++      <a href="/credits.html" target="_blank" rel="noopener">Credits and licenses</a>
 +    </header>
      <div id="app"></div>
      <script type="module" src="/src/main.ts"></script>
@@ -46,9 +51,18 @@ index 55eeb1c..af0cf3e 100644
    } else {
      commands = [raw];
 diff --git a/src/components/MudTerminal.vue b/src/components/MudTerminal.vue
-index 4e7df84..d656f84 100644
+index 4e7df84..63ec2e8 100644
 --- a/src/components/MudTerminal.vue
 +++ b/src/components/MudTerminal.vue
+@@ -38,7 +38,7 @@ function writeln(text: string) {
+ }
+ 
+ function focusInput() {
+-  inputRef.value?.focus();
++  inputRef.value?.focus({ preventScroll: true });
+ }
+ 
+ function refit() {
 @@ -77,7 +77,7 @@ function submitCommand() {
    inputValue.value = '';
    historyIndex = -1;
@@ -66,14 +80,69 @@ index 4e7df84..d656f84 100644
      allowProposedApi: true,
    });
  
-@@ -186,6 +187,7 @@ watch(
+@@ -140,6 +141,7 @@ onMounted(async () => {
+ 
+   // Click on terminal focuses the input
+   terminal.element?.addEventListener('mouseup', () => {
++    if (window.matchMedia('(pointer: coarse)').matches) return;
+     // Only focus if no text is selected
+     const sel = window.getSelection();
+     if (!sel || sel.isCollapsed) {
+@@ -186,6 +188,8 @@ watch(
            v-model="inputValue"
            :type="passwordMode ? 'password' : 'text'"
            class="command-input"
 +          aria-label="Game command"
++          enterkeyhint="send"
            autocomplete="off"
            autocorrect="off"
            autocapitalize="off"
+@@ -193,6 +197,7 @@ watch(
+           placeholder="Enter command..."
+           @keydown="onKeydown"
+         />
++        <button class="send-command" type="button" @pointerdown.prevent="focusInput" @click="submitCommand">Send</button>
+       </div>
+     </div>
+   </div>
+@@ -251,17 +256,35 @@ watch(
+ 
+ .command-input {
+   flex: 1;
++  min-width: 0;
++  min-height: 44px;
+   background: transparent;
+   border: none;
+   outline: none;
+   color: #cccccc;
+   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+-  font-size: 14px;
++  font-size: 16px;
+   padding: 4px 0;
+   caret-color: #4ec9b0;
+ }
+ 
++.send-command {
++  flex-shrink: 0;
++  min-width: 56px;
++  min-height: 44px;
++  margin-left: 8px;
++  padding: 0 10px;
++  border: 1px solid #555;
++  border-radius: 4px;
++  color: #eee;
++  background: #292929;
++  font: 16px system-ui, sans-serif;
++  cursor: pointer;
++}
++.send-command:focus-visible, .command-input:focus-visible { outline: 2px solid #8ecfff; outline-offset: -2px; }
++.send-command:active { background: #444; }
++
+ .command-input::placeholder {
+-  color: #555;
++  color: #888;
+ }
+ </style>
 diff --git a/src/composables/useConfig.ts b/src/composables/useConfig.ts
 index d1713e7..adc6563 100644
 --- a/src/composables/useConfig.ts
@@ -131,3 +200,23 @@ index ceb2d85..b030949 100644
      if (typeof msg.gmcp === 'string') {
        for (const fn of gmcpHandlers) fn(msg.gmcp);
      }
+diff --git a/src/main.ts b/src/main.ts
+index 684d042..6026627 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -1,4 +1,15 @@
+ import { createApp } from 'vue';
+ import App from './App.vue';
+ 
++// Mobile keyboards resize the visual viewport independently of CSS vh/dvh.
++function fitVisibleViewport() {
++  const viewport = window.visualViewport;
++  if (viewport && viewport.scale !== 1) return; // Preserve pinch zoom.
++  document.documentElement.style.setProperty('--viewport-height', `${viewport?.height ?? window.innerHeight}px`);
++  document.documentElement.style.setProperty('--viewport-top', `${viewport?.offsetTop ?? 0}px`);
++}
++window.visualViewport?.addEventListener('resize', fitVisibleViewport);
++window.visualViewport?.addEventListener('scroll', fitVisibleViewport);
++window.addEventListener('resize', fitVisibleViewport);
++fitVisibleViewport();
+ createApp(App).mount('#app');

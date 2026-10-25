@@ -1,4 +1,8 @@
 .git
+output
+.private
+.github
+tests
 player
 log
 gods

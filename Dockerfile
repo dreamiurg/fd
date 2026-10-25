@@ -1,16 +1,16 @@
-FROM debian:bookworm-slim AS build
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS build
 RUN apt-get update -qq && apt-get install -y --no-install-recommends build-essential libcrypt-dev > /dev/null && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY mud/ ./
 RUN make clean && make -j4 && chmod 755 rom
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 RUN apt-get update -qq \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libcrypt1 netcat-openbsd tzdata > /dev/null \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /var/lib/fd/areas /var/lib/fd/player/backup /var/lib/fd/player/backup2 /var/lib/fd/deleted /var/lib/fd/log
 COPY --from=build /build/rom /usr/local/bin/fd
-COPY mud/license.* /usr/share/doc/forgotten-dungeon/
+COPY mud/license.* NOTICE /usr/share/doc/forgotten-dungeon/
 COPY areas/*.are areas/area.lst areas/mobprog.prg areas/olc.hlp areas/clans.dat areas/config.dat areas/deity.dat areas/races.dat areas/music.txt areas/social.txt /var/lib/fd/areas/
 RUN sed -i '/^#END/i Deny test\nDeny file\nDeny srcwrite' /var/lib/fd/areas/config.dat \
     && chown -R 10001:10001 /var/lib/fd

@@ -1,0 +1,15 @@
+Based on Forgotten Dungeon MUD version 4.83.46.
+
+Forgotten Dungeon: Sergey Kulik (Saboteur), Taras Phizer (Adron), and the
+contributors credited in mud/license.fd and the original in-game credits.
+DikuMUD, Merc, and ROM retain their original notices and noncommercial terms
+in mud/license.doc, mud/license.txt, and mud/license.rom.
+
+The browser client and WebSocket proxy are based on maldorne/mud-web-client
+and maldorne/mud-web-proxy. Both are GPL-3.0-or-later; pinned source revisions,
+patches, and build instructions are in web/README.md. Their license texts are
+retained in the images and served by the browser client.
+
+This revival is operated noncommercially for a private group of friends.
+Original game passwords remain plaintext in player saves; use a unique game
+password. The HTTPS gateway password is separately generated and hashed.
