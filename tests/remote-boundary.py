@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 HOST = "fd.dreamiurg.net"
 
 
-def request(path, websocket=False, origin="https://" + HOST):
+def request(path, websocket=False, origin="https://" + HOST, expect_rejection=False):
     connection = http.client.HTTPSConnection(HOST, timeout=15, context=ssl.create_default_context())
     connection.connect()
     certificate = connection.sock.getpeercert()
@@ -32,6 +32,22 @@ def request(path, websocket=False, origin="https://" + HOST):
         if response.status == 101:
             expected = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
             assert response.getheader("Sec-WebSocket-Accept") == expected, "Invalid WebSocket handshake"
+            if expect_rejection:
+                # The pinned proxy checks Origin after upgrading, before creating
+                # a game connection. Attempt game access, then require its first
+                # frame to close the socket without any application data.
+                command = b'{"connect":1,"mud":"fd"}'
+                mask = os.urandom(4)
+                frame = bytes([0x81, 0x80 | len(command)]) + mask
+                frame += bytes(value ^ mask[index % 4] for index, value in enumerate(command))
+                connection.sock.settimeout(3)
+                connection.sock.sendall(frame)
+                header = response.fp.read(2)
+                assert len(header) == 2 and header[0] == 0x88, "Foreign origin received application data or remained open"
+                assert header[1] <= 125 and header[1] != 1, "Invalid server close frame"
+                assert len(response.fp.read(header[1])) == header[1], "Incomplete server close frame"
+        elif expect_rejection:
+            assert response.status == 403, "Foreign origin was not rejected"
         return response.status, body, certificate
     finally:
         connection.close()
@@ -54,7 +70,7 @@ def main():
     assert status == 200 and b"Forgotten Dungeon" in body, "Public site is unavailable"
     assert request("/health")[0] == 200, "Public health endpoint is unavailable"
     assert request("/ws", websocket=True)[0] == 101, "Public WebSocket upgrade failed"
-    assert request("/ws", websocket=True, origin="https://example.invalid")[0] == 403, "Foreign browser origin was accepted"
+    rejected_status = request("/ws", websocket=True, origin="https://example.invalid", expect_rejection=True)[0]
     with socket.socket() as probe:
         probe.settimeout(5)
         assert probe.connect_ex((args.expected_ip, 4000)) != 0, "Game TCP port 4000 is publicly reachable"
@@ -63,7 +79,7 @@ def main():
                       "certificate_expires_local": expiry.isoformat(), "timezone": "America/Los_Angeles",
                       "http_redirect": "https://" + HOST + "/",
                       "public_site": 200, "public_health": 200, "public_websocket": 101,
-                      "foreign_websocket_origin": 403,
+                      "foreign_websocket_origin": {"handshake_status": rejected_status, "rejected_before_application_data": True},
                       "external_game_port_4000": "unreachable"}, indent=2))
 
 
