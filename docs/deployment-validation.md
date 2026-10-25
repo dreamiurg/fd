@@ -1,0 +1,180 @@
+# Deployment acceptance
+
+The deployment is running at https://fd.dreamiurg.net. Remote HTTPS boundaries,
+Chromium and WebKit gameplay, mobile WebKit, restart, redeployment, VM reboot,
+backup, and isolated restore passed on 2026-10-24/25 (America/Los_Angeles).
+Physical iPhone hardware remains untested. Local Telnet and both desktop engines
+also passed the earlier local milestone.
+
+The remote checks use fresh synthetic characters and isolated browser profiles.
+They never read historical player files or modify the local game volume. Use a
+unique, disposable game password: the historical server saves game passwords as
+plaintext. The shared HTTPS gate is a separate credential.
+
+## Repeat the boundary checks
+
+Recover the gate through the restricted infrastructure `access-export` operation
+using a locally generated RSA public key. Only OAEP-encrypted ciphertext may be
+returned through SSM or Actions. Keep the private key and decrypted `access.env`
+in a mode-0700 ignored directory, with files mode 0600. Do not print the plaintext,
+put it in command arguments, or capture it in screenshots or browser traces.
+
+```sh
+python3 tests/remote-boundary.py \
+  --credentials output/private/fd-access.env --expected-ip <deployed-elastic-ip>
+```
+
+Supply the address from AWS metadata or an authoritative Route53 A response;
+record which source was used. The gate credential exported from the scoped SSM
+instance also binds the authenticated HTTPS endpoint to that provisioned service.
+The check verifies all recursive DNS addresses against that address, HTTP redirect,
+trusted TLS, rejected missing and incorrect gate credentials, protected `/health`
+and `/ws`, an authenticated WebSocket upgrade, and inaccessible public port 4000.
+Certificate timestamps in its output are converted to America/Los_Angeles.
+
+## Repeat browser acceptance
+
+Use Playwright CLI with isolated Chromium and WebKit contexts. Private mode-0600
+configs supply `browser.contextOptions.httpCredentials`. Chromium restricts
+`origin` to `https://fd.dreamiurg.net`. Keep credentials out of URLs, command
+arguments, screenshots, and traces. For mobile WebKit, use a 390 × 844 viewport,
+`isMobile: true`, and `hasTouch: true`.
+
+The tested WebKit 26.6 automation engine rejects valid origin-scoped credentials
+on default HTTPS port 443. A synthetic HTTPS fixture reproduced this: the same
+server authenticated on a nondefault port, failed on default 443 with the origin
+filter, and authenticated on 443 without that filter. The server gate is unchanged.
+For automated WebKit only, start the fixed-destination TLS tunnel:
+
+```sh
+python3 tests/remote-connect-proxy.py --port 18890
+```
+
+Its only allowed destination is `fd.dreamiurg.net:443`; foreign hosts, wrong ports,
+and non-CONNECT requests are rejected. TLS remains encrypted end-to-end and the
+proxy does not decrypt traffic or read plaintext credentials or TLS keys. Set WebKit context options
+`proxy: {server: "http://127.0.0.1:18890"}`, `serviceWorkers: "block"`, and
+`httpCredentials` without `origin`. Keep certificate verification enabled.
+Open `about:blank`, then run `tests/remote-webkit-open.js` with `run-code --filename`
+before any other navigation. Its extra request/socket guards do not replace the
+proxy: Playwright routing alone does not constrain redirected requests. Native
+Basic Auth challenge handling and the allowed native WebSocket remain exercised.
+Stop this test-only proxy after closing the isolated WebKit sessions. Players
+open the website normally and do not need a proxy.
+
+After opening Chromium normally or WebKit with that helper, run
+`tests/remote-browser.js` using Playwright CLI `run-code --filename`.
+The first phase creates a new character. Later phases
+are selected through `eval 'window.__fdPhase = "play"'` before running the file
+again. Synthetic game credentials remain in that isolated browser's memory;
+the script returns only nonsecret evidence.
+
+| Phase | Evidence |
+| --- | --- |
+| `create` | Complete character creation; password input masked and absent from terminal |
+| `play` | Command history excludes password; ANSI colors; north/south movement; Cyrillic `я` |
+| `peer` | Set `window.__fdPeerMessage` to the other session's returned message; verify receipt |
+| `areas` | Runtime lists KPI and Shadows; separate disposable character walks into KPI room 25003 |
+| `save` | Set title, explicitly save, and quit |
+| `checkpoint` | Set a new title while online without explicitly saving |
+| `relogin` | Use the visible Reconnect link, log in, and verify the retained title |
+| `mobile` | Touch Send button, no horizontal overflow, input visible after viewport reduction |
+| `quit` | Leave the test character safely |
+
+Set `window.__fdUseSendButton = true` before mobile creation. Run creation,
+play, mobile layout, save, and reconnect in that context. Viewport reduction
+simulates the space occupied by a keyboard; it does not prove physical iPhone
+keyboard behavior. An installed Safari application and physical iPhone remain
+unverified unless separately recorded below.
+
+Run the area tour in a separate desktop session. The original KPI park contains
+aggressive mobs that can kill a level-one character; the test stops at the first
+KPI room, `Перекресток в парке` (25003). The world is preserved unchanged.
+Shadows remains disconnected from ordinary walking. Its hall was verified with
+a temporary synthetic administrator locally; remote acceptance checks its
+runtime area listing without creating new world connections or admin accounts.
+
+## Restart, deployment, reboot, and restore
+
+Coordinate maintenance before disconnecting any active players. The fixed
+operations workflow is `fd-operations.yml` in `dreamiurg/terraform-aws-personal`.
+Use `checkpoint` immediately before each restart, deployment, or reboot, then
+`relogin` afterward. Record the release and kernel boot ID from `status`; an
+actual reboot must change the boot ID. Verify both browser sessions afterward.
+
+Run `backup`, then `restore-smoke`. The restore operation downloads the newest
+backup into an empty temporary directory, starts an isolated game container
+without network access, checks the login greeting, and removes only that
+temporary container and directory. It must never restore over live game state.
+
+## Results
+
+Local mobile preflight passed on 2026-10-24 in isolated WebKit 26.6 at
+390 × 844: fresh creation using native touch taps on Send, masked password and
+password-free command history, Cyrillic, seven rendered colors, movement,
+no horizontal overflow, reachable input at a reduced 430-pixel height, and
+save/quit/reconnect with the saved title preserved. Screenshot:
+`output/playwright/mobile-reconnected.png` (ignored local artifact).
+
+Terminal scrollback responded to a DOM wheel event. Playwright's mobile WebKit
+does not provide native wheel or touch-swipe automation; native iPhone touch
+scrolling and its real keyboard remain unverified. This preflight used a separate
+temporary local stack and did not change the user's original local game.
+
+Remote checks on 2026-10-24/25 (America/Los_Angeles):
+
+- Release `0c348dce83dd84ec7ab1182393a245a9594ab045` on instance
+  `i-0611e74c112d8f662`, EIP `184.33.125.10`, Oregon `t3a.micro`.
+- Trusted TLS and DNS matched the AWS metadata. Missing/wrong gate credentials
+  returned 401; authenticated site returned 200 and WebSocket upgraded with 101.
+  HTTP redirected to standard HTTPS; public TCP port 4000 was unreachable.
+- Chromium created a synthetic character, hid its password, excluded it from
+  24 history entries, rendered seven colors, moved north/south, and sent Cyrillic
+  including `я`. A separate character verified both runtime area names and walked
+  to KPI room 25003. Screenshot: `output/playwright/remote-kpi.png`.
+- Restart run `40170947495` and same-release redeploy `40171038434` passed.
+  Chromium logged back in with each title set before maintenance retained; these
+  titles were not explicitly saved before the operations.
+- Actual VM reboot `40171159704` changed boot ID from
+  `c3016a8a-e9a6-431f-8ced-7400029fd58a` to
+  `ebce9d38-e17a-440a-9a29-3edd14b3ebbd`. Status `40171237759` confirmed automatic
+  startup, enabled service, all four running containers, healthy game, and the
+  same release and data UUID `2206692a-5dce-4e4e-8ef5-71c7215d0125`. Chromium
+  reconnected with the pre-reboot title retained.
+- Backup `40171332397` and isolated restore `40171389997` passed. The restored
+  copy matched 140 files byte-for-byte, including two synthetic player saves,
+  and served the game login menu without network access. No live restore occurred.
+- Runtime evidence: `output/playwright/remote-post-reboot-status.txt` and
+  `output/playwright/remote-restore-result.txt`; timestamps converted to PDT.
+- AWS catalog pricing was verified as $12.91 per 730-hour month for compute,
+  30 GiB gp3 storage, and one public IPv4 address, plus small backup/DNS charges.
+
+Two isolated Chromium sessions also passed bidirectional room chat and private
+`tell`/reply with Cyrillic, followed by save/quit/reconnect. Screenshots:
+`output/playwright/remote-chromium-chat.png` and
+`output/playwright/remote-peer-chat.png`.
+
+The final fixed-tunnel runs passed on desktop WebKit and mobile WebKit at
+390 × 844: fresh creation, masked password, 24 password-free history entries,
+seven rendered colors, movement, Cyrillic, and cross-browser chat. Mobile creation
+and commands used touch taps on Send; input stayed reachable at 430-pixel height,
+with no horizontal overflow. Earlier remote save/quit/reconnect also passed.
+
+Shared reboot `40172435164` then preserved the titles of all three online test
+characters without explicit saves. Chromium, desktop WebKit, and mobile WebKit
+all reconnected through the visible UI and verified their respective titles.
+Final status `40172554987` passed with boot ID
+`bb68fda5-cf8a-46e3-bb6b-3b6e8def84d8`, enabled service, healthy game, four running
+containers, and the unchanged release/data mount. Cloud-init reported `done`
+after this normal reboot; no historical error record was manually cleared.
+The final HTTPS/DNS/gate/WebSocket/public-port boundary check passed again.
+
+Final evidence:
+
+- `output/playwright/remote-webkit-final.png`
+- `output/playwright/remote-mobile-final.png`
+- `output/playwright/remote-final-status.txt` (timestamps converted to PDT)
+
+These are ignored local artifacts. The mobile result is browser emulation;
+physical iPhone Safari, its real keyboard, and native swipe scrolling remain
+unverified. The server gate was unchanged throughout the WebKit automation fix.
