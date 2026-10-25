@@ -35,9 +35,9 @@ Useful commands: `look`, `north`, `south`, `who`, `say Привет`, `inventory
 `score`, `help`, `save`, and `quit`. `colour` toggles ANSI colors.
 
 **Use a throwaway password.** This historical engine stores character passwords
-in plaintext. The services are bound to localhost, and this setup is for local
-use. It is not approved for public deployment. Historical player accounts,
-private logs, and operator shell scripts are not copied into the runtime image.
+in plaintext. The Compose setup above binds to localhost. The deployed browser
+service uses HTTPS; see [AWS deployment](deploy/README.md). Historical player
+accounts, private logs, and operator shell scripts are not copied into the runtime image.
 
 ## Stop, restart, and preserve characters
 
@@ -115,7 +115,10 @@ Verified locally on October 24, 2026:
   restored, and a new login confirmed the administrator command was unavailable.
 
 WebKit verification exercises Safari's browser engine, not the installed Safari
-application. Mobile layouts and public deployment were not tested.
+application or a physical iPhone. Production HTTPS, public browser access, and
+mobile WebKit flows have since been verified; see
+[deployment validation](docs/deployment-validation.md). The current 84-column
+mobile update has local browser verification and still requires its live rollout check.
 
 ## Historical places
 
