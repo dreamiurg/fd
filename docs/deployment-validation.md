@@ -112,6 +112,28 @@ closed after safe logout. Physical iPhone hardware remains untested; mobile
 results are WebKit emulation. The earlier reboot/restore suite was not repeated
 for this website authentication change.
 
+## Mobile fidelity preflight
+
+The local mobile layout passed one focused WebKit/Chromium pass on 2026-10-25.
+`tests/mobile-fidelity.js` first failed against the old narrow terminal, then
+passed with the original 79-column castle banner intact. The fixed grid is 84
+columns because the game's unmodified score header occupies 83 visible columns.
+Actual score rows kept separators at columns 3, 27, 51, and 78; the inventory
+was displayed and equipment's 80-column separator stayed on one line.
+
+Fit and Larger text preserved output and the existing WebSocket connection.
+Portrait, landscape, and a reduced keyboard-sized viewport kept the 16-pixel
+input and 44-pixel Send button visible. Help, Cyrillic, save, and reconnect passed.
+The output pane supports keyboard focus; native ArrowRight scrolling passed in
+Chromium. Mobile WebKit's ArrowRight did not scroll, so native mobile keyboard
+scrolling and physical touch swipes remain unverified. Programmatic horizontal
+scrolling reached the right edge in Larger text.
+
+Reviewed local screenshots: `output/playwright/fidelity-mobile-fit-banner.png`,
+`fidelity-mobile-larger-panned.png`, `fidelity-mobile-score-final.png`, and
+`fidelity-desktop-score.png` in the same directory. These are local preflight
+results; deployed fidelity acceptance is recorded separately after rollout.
+
 ## Original protected deployment results
 
 The results below describe the earlier release with its shared HTTP gate.
