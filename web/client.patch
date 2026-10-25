@@ -2,7 +2,7 @@ diff --git a/index.html b/index.html
 index 3cc68eb..305f3c5 100644
 --- a/index.html
 +++ b/index.html
-@@ -2,16 +2,26 @@
+@@ -2,16 +2,25 @@
  <html lang="en">
    <head>
      <meta charset="UTF-8" />
@@ -32,7 +32,6 @@ index 3cc68eb..305f3c5 100644
 +      <strong>Forgotten Dungeon</strong>
 +      <span>Choose 2 (Windows) at the codepage prompt.</span>
 +      <a href="/">Reconnect</a>
-+      <a href="/credits.html" target="_blank" rel="noopener">Credits and licenses</a>
 +    </header>
      <div id="app"></div>
      <script type="module" src="/src/main.ts"></script>
